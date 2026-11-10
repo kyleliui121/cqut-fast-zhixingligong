@@ -54,7 +54,10 @@ class SettingsPage extends StatelessWidget {
                       trailing: '',
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => PortalLoginPage(state: state),
+                          builder: (_) => PortalLoginPage(
+                            state: state,
+                            studentId: state.account?.username ?? '',
+                          ),
                         ),
                       ),
                     ),
