@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../core/format.dart';
 import '../core/version.dart';
+import 'portal_login_page.dart';
 import 'widgets.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -48,6 +49,17 @@ class SettingsPage extends StatelessWidget {
                 child: Column(
                   children: [
                     _TapRow(
+                      icon: Icons.login_rounded,
+                      label: '重新通过学校网页登录',
+                      trailing: '',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PortalLoginPage(state: state),
+                        ),
+                      ),
+                    ),
+                    const Divider(),
+                    _TapRow(
                       icon: Icons.sync_rounded,
                       label: '立即同步',
                       trailing: state.busy ? '同步中…' : '',
@@ -63,6 +75,19 @@ class SettingsPage extends StatelessWidget {
                   ],
                 ),
               ),
+              if (state.error != null) ...[
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    state.error!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               const SectionHeader('数据'),
               AppCard(
