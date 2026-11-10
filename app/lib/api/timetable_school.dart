@@ -84,6 +84,11 @@ class TimetableSchool implements SchoolApi {
       throw const SchoolException('课表服务未返回 JSON 数据，可能需要重新登录');
     }
     if (parsed['eventList'] is! List) {
+      // CQUT Helper's response model allows eventList == null on empty weeks.
+      // The timetable metadata distinguishes that from a {code,msg} auth error.
+      if (parsed.containsKey('yearTerm') || parsed.containsKey('weekDayList')) {
+        return {...parsed, 'eventList': <dynamic>[]};
+      }
       final code = parsed['code']?.toString();
       throw SchoolException(
         code == null
