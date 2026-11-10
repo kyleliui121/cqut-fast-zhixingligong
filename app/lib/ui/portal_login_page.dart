@@ -91,7 +91,7 @@ class _PortalLoginPageState extends State<PortalLoginPage> {
         return;
       }
       final sessionKey = cookies.entries
-          .map((entry) => entry.key + '=' + entry.value)
+          .map((entry) => '${entry.key}=${entry.value}')
           .join(';');
       if (!manual && sessionKey == _lastTriedSession) return;
       _lastTriedSession = sessionKey;
