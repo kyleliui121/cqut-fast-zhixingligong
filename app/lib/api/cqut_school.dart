@@ -230,7 +230,7 @@ class CqutSchool implements SchoolApi {
       throw SchoolException(_responseError('查询教学周课表', weekCourses, coursesBody));
     }
     final startDay = content['startDay']?.toString();
-    final maxWeek = int.tryParse(content?['maxWeek']?.toString() ?? '');
+    final maxWeek = int.tryParse(content['maxWeek']?.toString() ?? '');
     _totalWeeks = maxWeek ?? 20;
     final parsedStart = startDay == null ? null : DateTime.tryParse(startDay);
     if (parsedStart != null) {

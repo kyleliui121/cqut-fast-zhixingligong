@@ -1,7 +1,7 @@
-﻿name: zhixing_flash
-description: "鐭ヨ闂 鈥斺€?璇捐〃 / 鑰冭瘯 / 鎴愮哗鐨勮交閲忔湰鍦扮増"
+name: zhixing_flash
+description: "知行闪课 —— 课表 / 考试 / 成绩的轻量本地版"
 publish_to: 'none'
-version: 0.2.2+4
+version: 0.2.3+5
 
 environment:
   sdk: ^3.9.0
@@ -13,7 +13,7 @@ dependencies:
     sdk: flutter
   path_provider: ^2.1.5
   html: ^0.15.6
-  crypto: ^3.0.8
+  crypto: ^3.0.6
   pointycastle: ^4.0.0
 
 dev_dependencies:
@@ -23,5 +23,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
-
