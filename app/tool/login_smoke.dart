@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 import 'package:zhixing_flash/api/cqut_school.dart';
 import 'package:zhixing_flash/api/school_api.dart';
 

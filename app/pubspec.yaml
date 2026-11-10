@@ -1,7 +1,7 @@
 name: zhixing_flash
 description: "知行闪课 —— 课表 / 考试 / 成绩的轻量本地版"
 publish_to: 'none'
-version: 0.2.3+5
+version: 0.2.4+6
 
 environment:
   sdk: ^3.9.0
