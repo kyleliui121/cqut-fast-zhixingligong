@@ -3,23 +3,51 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import 'portal_login_page.dart';
 
-/// Browser-based CAS login is only needed when the portal session expires.
-/// This page never handles or stores the school's account password.
-class LoginPage extends StatelessWidget {
+/// Only the student ID is entered in our app. Password stays in official CAS.
+class LoginPage extends StatefulWidget {
   final AppState state;
   const LoginPage({super.key, required this.state});
 
-  Future<void> _openPortal(BuildContext context) async {
+  @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final TextEditingController _studentId = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _studentId.text = widget.state.account?.username ?? '';
+  }
+
+  @override
+  void dispose() {
+    _studentId.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openPortal() async {
+    final id = _studentId.text.trim();
+    if (id.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先填写学号')),
+      );
+      return;
+    }
+    FocusScope.of(context).unfocus();
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => PortalLoginPage(state: state),
+        builder: (_) => PortalLoginPage(
+          state: widget.state,
+          studentId: id,
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -56,36 +84,57 @@ class LoginPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    '课表、考试、成绩，本地缓存，打开就快',
+                    '课表来自学校官方接口，打开直接读取本地缓存',
                     style: TextStyle(fontSize: 14, color: Color(0xFF7A8099)),
                   ),
-                  const SizedBox(height: 44),
-                  const Text(
-                    '首次登录通过重庆理工大学官方网页完成。'
-                    '验证后，日常查看课表直接使用本地缓存。',
-                    style: TextStyle(fontSize: 14, height: 1.6),
+                  const SizedBox(height: 36),
+                  TextField(
+                    controller: _studentId,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _openPortal(),
+                    decoration: InputDecoration(
+                      labelText: '学号',
+                      hintText: '填写学校统一身份认证的学号',
+                      prefixIcon: const Icon(Icons.person_outline_rounded),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
                   ),
-                  if (state.error != null) ...[
-                    const SizedBox(height: 20),
+                  const SizedBox(height: 18),
+                  const Text(
+                    '下一步打开重庆理工大学官方统一身份认证页面。'
+                    '请直接在官方网页输入密码；登录后自动获取课表。',
+                    style: TextStyle(fontSize: 13, height: 1.6),
+                  ),
+                  if (widget.state.error != null) ...[
+                    const SizedBox(height: 16),
                     Text(
-                      state.error!,
-                      style: TextStyle(fontSize: 13, color: scheme.error),
+                      widget.state.error!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ],
-                  const SizedBox(height: 26),
+                  const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
                     height: 52,
                     child: FilledButton(
-                      onPressed: () => _openPortal(context),
+                      onPressed: _openPortal,
                       child: const Text('前往学校官方登录'),
                     ),
                   ),
                   const SizedBox(height: 18),
                   const Text(
-                    '账号密码仅在学校官方登录网页中填写；'
-                    '本应用不会读取或保存登录密码。',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF8F95A6), height: 1.5),
+                    '密码仅在学校官方网页中输入；本应用不会读取或保存登录密码。',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF8F95A6),
+                      height: 1.5,
+                    ),
                   ),
                 ],
               ),
