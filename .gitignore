@@ -28,3 +28,6 @@ app/android/app/release/
 # ç³»ç»Ÿ
 .DS_Store
 Thumbs.db
+
+# ²âÊÔ²úÎï
+app/test/failures/
