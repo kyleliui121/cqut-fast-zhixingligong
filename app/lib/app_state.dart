@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'api/cqut_school.dart';
 import 'api/school_api.dart';
@@ -8,11 +11,16 @@ import 'models.dart';
 
 /// 全局状态：账号、缓存数据、刷新逻辑。
 class AppState extends ChangeNotifier {
+  static const String _portalSessionKey = 'cqut_portal_session_v1';
   final LocalStore store;
   final SchoolApi Function()? _apiFactory;
+  final FlutterSecureStorage _secureStorage;
 
-  AppState(this.store, {SchoolApi Function()? apiFactory})
-      : _apiFactory = apiFactory;
+  AppState(this.store, {
+    SchoolApi Function()? apiFactory,
+    FlutterSecureStorage secureStorage = const FlutterSecureStorage(),
+  })  : _apiFactory = apiFactory,
+        _secureStorage = secureStorage;
 
   Account? account;
   SchoolApi? api;
@@ -92,7 +100,10 @@ class AppState extends ChangeNotifier {
     final saved = await store.readMap('account');
     if (saved != null) {
       account = Account.fromJson(saved);
-      api = _createApi();
+      // Erase passwords stored in account.json by older APK versions.
+      if (saved.containsKey('password')) {
+        await store.write('account', account!.toJson());
+      }
     }
     final termJson = await store.readMap('term');
     if (termJson != null) {
@@ -141,6 +152,48 @@ class AppState extends ChangeNotifier {
 
   SchoolApi _createApi() => _apiFactory?.call() ?? CqutSchool();
 
+  /// Accept a portal-issued token from the embedded official login page.
+  /// Never persist the user's CAS password.
+  Future<bool> loginWithPortalToken(
+    String token, {
+    Map<String, String> cookies = const <String, String>{},
+  }) async {
+    if (busy) return false;
+    busy = true;
+    error = null;
+    notifyListeners();
+    final candidate = CqutSchool();
+    try {
+      await candidate.loginWithOfficeToken(token, cookies: cookies);
+      // Sensitive session data is stored via Android Keystore-backed storage.
+      await _secureStorage.write(
+        key: _portalSessionKey,
+        value: jsonEncode(<String, Object>{
+          'token': token,
+          'cookies': cookies,
+        }),
+      );
+      api?.dispose();
+      api = candidate;
+      _authenticated = true;
+      account = Account(username: candidate.operatorId);
+      await store.write('account', account!.toJson());
+      busy = false;
+      notifyListeners();
+      await refreshAll(silent: true);
+      return true;
+    } on SchoolException catch (e) {
+      candidate.dispose();
+      error = e.message;
+    } catch (_) {
+      candidate.dispose();
+      error = '门户会话连接失败，请重新尝试';
+    }
+    busy = false;
+    notifyListeners();
+    return false;
+  }
+
   Future<bool> login(String username, String password) async {
     busy = true;
     error = null;
@@ -150,7 +203,7 @@ class AppState extends ChangeNotifier {
       await candidate.login(username.trim(), password);
       api?.dispose();
       api = candidate;
-      account = Account(username: username.trim(), password: password);
+      account = Account(username: username.trim());
       _authenticated = true;
       await store.write('account', account!.toJson());
       busy = false;
@@ -174,13 +227,39 @@ class AppState extends ChangeNotifier {
 
   Future<void> refreshAll({bool silent = false}) async {
     var client = api;
-    if (client == null) return;
+    if (client == null && account == null) return;
 
-    // 冷启动时 api 还没登录，先用保存的账号静默登录一次
+    // Display cached data immediately; only contact school on manual refresh.
+    // Restore an encrypted office session instead of replaying a saved password.
     if (!_authenticated && account != null) {
       final candidate = _createApi();
       try {
-        await candidate.login(account!.username, account!.password);
+        if (candidate is CqutSchool) {
+          final encrypted = await _secureStorage.read(key: _portalSessionKey);
+          if (encrypted == null || encrypted.isEmpty) {
+            throw const SchoolException('需要重新通过学校网页登录', needLogin: true);
+          }
+          final decoded = jsonDecode(encrypted);
+          if (decoded is! Map || decoded['token'] is! String) {
+            throw const SchoolException('本地会话无效，请重新登录', needLogin: true);
+          }
+          final rawCookies = decoded['cookies'];
+          final cookies = <String, String>{};
+          if (rawCookies is Map) {
+            for (final entry in rawCookies.entries) {
+              if (entry.key is String && entry.value is String) {
+                cookies[entry.key as String] = entry.value as String;
+              }
+            }
+          }
+          await candidate.loginWithOfficeToken(
+            decoded['token'] as String,
+            cookies: cookies,
+          );
+        } else {
+          // MockSchool remains injectable for offline rendering tests.
+          await candidate.login(account!.username, account!.password);
+        }
         api?.dispose();
         api = candidate;
         client = candidate;
@@ -191,9 +270,9 @@ class AppState extends ChangeNotifier {
         busy = false;
         notifyListeners();
         return;
-      } catch (e) {
+      } catch (_) {
         candidate.dispose();
-        error = '自动登录失败：$e';
+        error = '连接学校系统失败，请重新网页登录';
         busy = false;
         notifyListeners();
         return;
@@ -221,7 +300,7 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    final SchoolApi school = client;
+    final SchoolApi school = api ?? client!;
     await run('学期', () async {
       term = await school.fetchTerm();
     });
@@ -286,6 +365,7 @@ class AppState extends ChangeNotifier {
     api = null;
     _authenticated = false;
     if (!keepAccount) {
+      await _secureStorage.delete(key: _portalSessionKey);
       account = null;
       await store.delete('account');
       notifyListeners();
