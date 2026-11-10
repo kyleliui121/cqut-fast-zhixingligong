@@ -143,9 +143,14 @@ class CqutSchool implements SchoolApi {
         _http.cookies.set(entry.key, entry.value);
       }
     }
-    // These are used by the office APIs alongside the token header.
-    _http.cookies.set('_yh_office_token', token);
-    _http.cookies.set('ump_token_pc-officeHall', token);
+    // Preserve real cookies issued by the browser instead of overwriting
+    // them with a guessed value. Supply fallbacks only if none were received.
+    if (!_http.cookies.items.containsKey('_yh_office_token')) {
+      _http.cookies.set('_yh_office_token', token);
+    }
+    if (!_http.cookies.items.containsKey('ump_token_pc-officeHall')) {
+      _http.cookies.set('ump_token_pc-officeHall', token);
+    }
 
     // The office token is NOT the course micToken. Exchange it via app ticket.
     final appTicket = await _appTicket();
