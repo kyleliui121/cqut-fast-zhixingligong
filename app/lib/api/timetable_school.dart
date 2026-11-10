@@ -19,6 +19,11 @@ class TimetableSchool implements SchoolApi {
   TermInfo? _term;
   int _currentWeek = 1;
 
+  /// Fast first paint: the authenticated current week is available immediately.
+  List<Course> get initialCourses => _initial == null
+      ? const <Course>[]
+      : TimetableParser.parseWeek(_initial!, _currentWeek);
+
   @override
   String get displayName => '重庆理工大学课表系统';
 
