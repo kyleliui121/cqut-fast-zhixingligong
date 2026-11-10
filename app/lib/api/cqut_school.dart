@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:pointycastle/export.dart';
 
+import '../core/nonce.dart';
 import '../models.dart';
 import '../net/http_session.dart';
 import 'school_api.dart';
@@ -412,8 +413,5 @@ class CqutSchool implements SchoolApi {
 
   String _ts() => DateTime.now().millisecondsSinceEpoch.toString();
 
-  String _nonce(int digits) {
-    final max = math.pow(10, digits).toInt();
-    return (_random.nextInt(max ~/ 10) + max ~/ 10).toString();
-  }
+  String _nonce(int digits) => numericNonce(_random, digits);
 }
