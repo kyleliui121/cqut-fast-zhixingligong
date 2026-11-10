@@ -49,10 +49,9 @@ void main() {
     await tester.pumpWidget(ZhixingApp(state: state));
     await tester.pumpAndSettle();
 
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/01_login.png'),
-    );
+    // The login entry has switched to the official WebView flow.
+    // Keep this assertion independent of the previous password-form screenshot.
+    expect(find.text('前往学校官方登录'), findsOneWidget);
     // ignore: avoid_print
     print('captured login');
 
