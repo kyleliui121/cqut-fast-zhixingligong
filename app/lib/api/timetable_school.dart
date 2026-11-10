@@ -87,7 +87,7 @@ class TimetableSchool implements SchoolApi {
       );
     }
     if (!response.ok) {
-      throw SchoolException('课表接口 HTTP ' + response.status.toString());
+      throw SchoolException('课表接口 HTTP ${response.status}');
     }
     final parsed = response.tryJson();
     if (parsed is! Map<String, dynamic>) {
