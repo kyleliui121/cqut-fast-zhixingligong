@@ -64,12 +64,21 @@ class TimetableSchool implements SchoolApi {
     final response = await _http.send(
       'POST',
       _endpoint,
+      follow: false, // Never forward timetable session cookies to CAS redirects.
       headers: const {
         'Content-Type': 'application/json; charset=utf-8',
         'Accept': 'application/json',
       },
       body: jsonEncode(request),
     );
+    if (response.status == 301 || response.status == 302 ||
+        response.status == 303 || response.status == 307 ||
+        response.status == 308) {
+      throw const SchoolException(
+        '课表服务重定向至登录页，请重新登录',
+        needLogin: true,
+      );
+    }
     if (response.status == 401 || response.status == 403) {
       throw const SchoolException(
         '课表登录会话已失效，请重新通过学校网页登录',
