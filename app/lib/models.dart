@@ -327,16 +327,16 @@ class Account {
     this.password = '',
   });
 
+  // The password field is kept in-memory for old test doubles only.
+  // Never write a school password to account.json.
   Map<String, dynamic> toJson() => {
         'username': username,
         'displayName': displayName,
-        'password': password,
       };
 
   factory Account.fromJson(Map<String, dynamic> j) => Account(
         username: asString(j['username']),
         displayName: asString(j['displayName']),
-        password: asString(j['password']),
       );
 }
 
