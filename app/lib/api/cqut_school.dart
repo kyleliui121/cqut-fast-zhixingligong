@@ -80,17 +80,28 @@ class CqutSchool implements SchoolApi {
       },
     );
     final loginBody = _asMap(resp.body);
-    final code = loginBody?['code'];
-    if (code != 200) {
-      final msg = loginBody?['msg']?.toString() ?? '登录失败（$code）';
-      throw SchoolException(msg, needLogin: true);
+    // CAS may send success code as a string instead of an integer.
+    if (!resp.ok || loginBody?['code']?.toString() != '200') {
+      throw SchoolException(
+        _responseError('统一认证提交', resp, loginBody),
+        needLogin: true,
+      );
     }
 
     // 3. 重新访问登录页，跟随 CAS 跳转拿 oauth 票据
     final landing = await _http.get(loginPage);
-    final oauthTicket = _oauthTicket(landing.uri);
-    if (oauthTicket == null) {
-      throw const SchoolException('登录成功，但没有拿到跳转票据', needLogin: true);
+    String? oauthTicket;
+    // Preserve the ticket from an intermediate redirect if the final landing is WAF-protected.
+    for (final target in <Uri>[landing.uri, ...landing.redirectHistory.reversed]) {
+      oauthTicket = _oauthTicket(target);
+      if (oauthTicket != null && oauthTicket.isNotEmpty) break;
+    }
+    if (oauthTicket == null || oauthTicket.isEmpty) {
+      throw SchoolException(
+        '统一认证跳转失败：未找到 ticket（HTTP ${landing.status}，'
+        '跳转 ${landing.redirectHistory.length} 次）',
+        needLogin: true,
+      );
     }
 
     // 4. 票据换 office token
@@ -101,9 +112,9 @@ class CqutSchool implements SchoolApi {
     final infoBody = _asMap(info.body);
     final infoContent = infoBody?['content'] as Map<String, dynamic>?;
     final token = infoContent?['token']?.toString();
-    if (token == null || token.isEmpty) {
+    if (!info.ok || token == null || token.isEmpty) {
       throw SchoolException(
-        infoBody?['message']?.toString() ?? '换取登录凭证失败',
+        _responseError('兑换门户令牌', info, infoBody),
         needLogin: true,
       );
     }
@@ -117,24 +128,25 @@ class CqutSchool implements SchoolApi {
 
     // 5-6. 换应用凭据 + micToken
     final appTicket = await _appTicket();
-    if (appTicket != null) {
-      final appInfo = await _signedGet(
-        '/normalservice/auth/userInfo/${Uri.encodeComponent(appTicket)}',
-        extra: const {'equipmentName': ''},
+    final appInfo = await _signedGet(
+      '/normalservice/auth/userInfo/${Uri.encodeComponent(appTicket)}',
+      extra: const {'equipmentName': ''},
+    );
+    final appBody = _asMap(appInfo.body);
+    final content = appBody?['content'] as Map<String, dynamic>?;
+    _micToken = content?['token']?.toString();
+    _operatorId = content?['staffCode']?.toString() ?? _operatorId;
+    if (!appInfo.ok || _micToken == null || _micToken!.isEmpty) {
+      throw SchoolException(
+        _responseError('兑换课程服务令牌', appInfo, appBody),
+        needLogin: true,
       );
-      final content = _asMap(appInfo.body)?['content'] as Map<String, dynamic>?;
-      _micToken = content?['token']?.toString();
-      _operatorId = content?['staffCode']?.toString() ?? _operatorId;
-    }
-
-    if (_micToken == null) {
-      throw const SchoolException('没有拿到课程服务凭证', needLogin: true);
     }
 
     await _loadTerm();
   }
 
-  Future<String?> _appTicket() async {
+  Future<String> _appTicket() async {
     final uri = Uri.parse('$_ehall/ump/officeHall/getApplicationUrl').replace(
       queryParameters: {
         'applicationCode': 'UIVx60',
@@ -146,8 +158,16 @@ class CqutSchool implements SchoolApi {
       },
     );
     final resp = await _http.get(uri, headers: {'token': _officeToken ?? ''});
-    final content = _asMap(resp.body)?['content'] as Map<String, dynamic>?;
-    return content?['ticket']?.toString();
+    final body = _asMap(resp.body);
+    final content = body?['content'] as Map<String, dynamic>?;
+    final ticket = content?['ticket']?.toString();
+    if (!resp.ok || ticket == null || ticket.isEmpty) {
+      throw SchoolException(
+        _responseError('获取课程应用票据', resp, body),
+        needLogin: true,
+      );
+    }
+    return ticket;
   }
 
   /// 学年学期 + 当前周 + 开学日期
@@ -185,9 +205,13 @@ class CqutSchool implements SchoolApi {
       'schoolYear': _schoolYear,
       'term': _term,
     });
-    final weekContent =
-        (_asMap(weekResp.body)?['content'] as Map<String, dynamic>?)?['nowWeek'];
-    _currentWeek = int.tryParse(weekContent?.toString() ?? '') ?? 1;
+    final weekBody = _asMap(weekResp.body);
+    final weekContent = (weekBody?['content'] as Map<String, dynamic>?)?['nowWeek'];
+    final parsedWeek = int.tryParse(weekContent?.toString() ?? '');
+    if (!weekResp.ok || parsedWeek == null) {
+      throw SchoolException(_responseError('查询当前教学周', weekResp, weekBody));
+    }
+    _currentWeek = math.max(1, parsedWeek);
 
     final weekCourses = await _signedGet('/normalservice/course/selectCourse', extra: {
       'schoolYear': _schoolYear,
@@ -196,8 +220,12 @@ class CqutSchool implements SchoolApi {
       'isWeek': 'YES',
       'userType': 'STUDENT',
     });
-    final content = _asMap(weekCourses.body)?['content'] as Map<String, dynamic>?;
-    final startDay = content?['startDay']?.toString();
+    final coursesBody = _asMap(weekCourses.body);
+    final content = coursesBody?['content'] as Map<String, dynamic>?;
+    if (!weekCourses.ok || content == null) {
+      throw SchoolException(_responseError('查询教学周课表', weekCourses, coursesBody));
+    }
+    final startDay = content['startDay']?.toString();
     final maxWeek = int.tryParse(content?['maxWeek']?.toString() ?? '');
     _totalWeeks = maxWeek ?? 20;
     final parsedStart = startDay == null ? null : DateTime.tryParse(startDay);
@@ -227,8 +255,8 @@ class CqutSchool implements SchoolApi {
       'userType': 'STUDENT',
     });
     final body = _asMap(resp.body);
-    if (body?['code'] != '40001') {
-      throw SchoolException(body?['message']?.toString() ?? '获取课表失败');
+    if (!resp.ok || body?['code']?.toString() != '40001') {
+      throw SchoolException(_responseError('同步课表', resp, body));
     }
     final content = body?['content'] as Map<String, dynamic>?;
     final list = (content?['list'] as List?) ?? const [];
@@ -353,12 +381,36 @@ class CqutSchool implements SchoolApi {
     }
   }
 
+  /// Supports ?ticket=..., #/route?ticket=..., and #ticket=...
   static String? _oauthTicket(Uri uri) {
+    final direct = uri.queryParameters['ticket'];
+    if (direct != null && direct.isNotEmpty) return direct;
     final fragment = uri.fragment;
     if (fragment.isEmpty) return null;
-    final query = fragment.contains('?') ? fragment.split('?').last : fragment;
-    final params = Uri.splitQueryString(query);
-    return params['ticket'];
+    final pos = fragment.lastIndexOf('?');
+    final query = pos >= 0 ? fragment.substring(pos + 1) : fragment;
+    try {
+      final ticket = Uri.splitQueryString(query)['ticket'];
+      return ticket == null || ticket.isEmpty ? null : ticket;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Include the failing stage and response code, not credentials or tickets.
+  static String _responseError(
+    String step,
+    FetchResult response,
+    Map<String, dynamic>? data,
+  ) {
+    final raw = (data?['message'] ?? data?['msg'])?.toString().trim();
+    final summary = raw == null || raw.isEmpty
+        ? '响应缺少预期数据'
+        : raw.replaceAll('\n', ' ').replaceAll('\r', ' ');
+    final brief = summary.length > 100 ? '${summary.substring(0, 100)}…' : summary;
+    final code = data?['code']?.toString();
+    final extra = code == null ? '' : '，code=$code';
+    return '$step失败：$brief（HTTP ${response.status}$extra）';
   }
 
   String _ts() => DateTime.now().millisecondsSinceEpoch.toString();
