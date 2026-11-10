@@ -54,6 +54,9 @@ class CqutSchool implements SchoolApi {
   @override
   String get displayName => '网上办事大厅';
 
+  /// Staff code supplied by the school API after the application token exchange.
+  String get operatorId => _operatorId == '0' ? '' : _operatorId;
+
   // ---------------------------------------------------------------- 登录
 
   @override
@@ -119,15 +122,32 @@ class CqutSchool implements SchoolApi {
         needLogin: true,
       );
     }
-    _officeToken = token;
     _operatorId = infoContent?['staffCode']?.toString() ?? username;
+    await loginWithOfficeToken(token);
+  }
 
-    // 服务端 API 还要求 token 同时以 cookie 形式存在
+  /// Complete authorization using the office token issued by the real portal.
+  /// The browser handles CAS, WAF challenges, and the portal's getLoginTicket.
+  /// Only the selected ehall session cookies are reused by the native API.
+  Future<void> loginWithOfficeToken(
+    String token, {
+    Map<String, String> cookies = const <String, String>{},
+  }) async {
+    if (token.trim().isEmpty) {
+      throw const SchoolException('门户登录凭证为空，请重新网页登录', needLogin: true);
+    }
+    _officeToken = token;
+    _micToken = null;
+    for (final entry in cookies.entries) {
+      if (entry.key.isNotEmpty && entry.value.isNotEmpty) {
+        _http.cookies.set(entry.key, entry.value);
+      }
+    }
+    // These are used by the office APIs alongside the token header.
     _http.cookies.set('_yh_office_token', token);
-    _http.cookies.set('_yh_office_ticket', oauthTicket);
     _http.cookies.set('ump_token_pc-officeHall', token);
 
-    // 5-6. 换应用凭据 + micToken
+    // The office token is NOT the course micToken. Exchange it via app ticket.
     final appTicket = await _appTicket();
     final appInfo = await _signedGet(
       '/normalservice/auth/userInfo/${Uri.encodeComponent(appTicket)}',
