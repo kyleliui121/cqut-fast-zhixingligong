@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import 'api/cqut_school.dart';
+import 'api/timetable_school.dart';
 import 'api/school_api.dart';
 import 'core/format.dart';
 import 'core/store.dart';
@@ -11,7 +12,8 @@ import 'models.dart';
 
 /// 全局状态：账号、缓存数据、刷新逻辑。
 class AppState extends ChangeNotifier {
-  static const String _portalSessionKey = 'cqut_portal_session_v1';
+  static const String _timetableSessionKey = 'cqut_timetable_session_v1';
+  static const String _legacyPortalSessionKey = 'cqut_portal_session_v1';
   final LocalStore store;
   final SchoolApi Function()? _apiFactory;
   final FlutterSecureStorage _secureStorage;
@@ -150,44 +152,58 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  SchoolApi _createApi() => _apiFactory?.call() ?? CqutSchool();
+  SchoolApi _createApi() => _apiFactory?.call() ?? TimetableSchool();
 
-  /// Accept a portal-issued token from the embedded official login page.
-  /// Never persist the user's CAS password.
-  Future<bool> loginWithPortalToken(
-    String token, {
-    Map<String, String> cookies = const <String, String>{},
-  }) async {
+  /// Called with first-party timetable-cfc cookies after CAS WebView login.
+  /// Do not read or persist the school password.
+  Future<bool> loginWithTimetableSession(
+    String studentId,
+    Map<String, String> cookies,
+  ) async {
     if (busy) return false;
     busy = true;
     error = null;
     notifyListeners();
-    final candidate = CqutSchool();
+    final candidate = TimetableSchool();
     try {
-      await candidate.loginWithOfficeToken(token, cookies: cookies);
-      // Sensitive session data is stored via Android Keystore-backed storage.
+      await candidate.loginWithCookies(studentId, cookies);
+      final trimmed = studentId.trim();
+      final isOtherUser = account != null && account!.username != trimmed;
       await _secureStorage.write(
-        key: _portalSessionKey,
+        key: _timetableSessionKey,
         value: jsonEncode(<String, Object>{
-          'token': token,
+          'studentId': trimmed,
           'cookies': cookies,
         }),
       );
       api?.dispose();
       api = candidate;
       _authenticated = true;
-      account = Account(username: candidate.operatorId);
+      account = Account(username: trimmed);
+      if (isOtherUser) {
+        courses = <Course>[];
+        exams = <Exam>[];
+        grades = <Grade>[];
+        notices = <Notice>[];
+        _seenGrades = <String>{};
+        _hasSynced = false;
+      }
+      term = await candidate.fetchTerm();
+      courses = candidate.initialCourses;
       await store.write('account', account!.toJson());
+      await _saveAll();
       busy = false;
       notifyListeners();
-      await refreshAll(silent: true);
+
+      // Current-week data renders immediately. Remaining weeks populate cache.
+      unawaited(refreshAll(silent: true));
       return true;
     } on SchoolException catch (e) {
       candidate.dispose();
       error = e.message;
     } catch (_) {
       candidate.dispose();
-      error = '门户会话连接失败，请重新尝试';
+      error = '课表会话验证失败，请重新完成学校网页登录';
     }
     busy = false;
     notifyListeners();
@@ -229,35 +245,37 @@ class AppState extends ChangeNotifier {
     var client = api;
     if (client == null && account == null) return;
 
-    // Display cached data immediately; only contact school on manual refresh.
-    // Restore an encrypted office session instead of replaying a saved password.
+    // Only restore a secure timetable session on demand. Cached courses are
+    // visible without any network request on normal app startup.
     if (!_authenticated && account != null) {
       final candidate = _createApi();
       try {
-        if (candidate is CqutSchool) {
-          final encrypted = await _secureStorage.read(key: _portalSessionKey);
+        if (candidate is TimetableSchool) {
+          final encrypted = await _secureStorage.read(
+            key: _timetableSessionKey,
+          );
           if (encrypted == null || encrypted.isEmpty) {
-            throw const SchoolException('需要重新通过学校网页登录', needLogin: true);
+            throw const SchoolException(
+              '需要重新通过学校网页登录',
+              needLogin: true,
+            );
           }
           final decoded = jsonDecode(encrypted);
-          if (decoded is! Map || decoded['token'] is! String) {
+          if (decoded is! Map || decoded['studentId'] is! String ||
+              decoded['cookies'] is! Map) {
             throw const SchoolException('本地会话无效，请重新登录', needLogin: true);
           }
-          final rawCookies = decoded['cookies'];
           final cookies = <String, String>{};
-          if (rawCookies is Map) {
-            for (final entry in rawCookies.entries) {
-              if (entry.key is String && entry.value is String) {
-                cookies[entry.key as String] = entry.value as String;
-              }
+          for (final entry in (decoded['cookies'] as Map).entries) {
+            if (entry.key is String && entry.value is String) {
+              cookies[entry.key as String] = entry.value as String;
             }
           }
-          await candidate.loginWithOfficeToken(
-            decoded['token'] as String,
-            cookies: cookies,
-          );
+          if ((decoded['studentId'] as String) != account!.username) {
+            throw const SchoolException('登录学号已变更，请重新登录', needLogin: true);
+          }
+          await candidate.loginWithCookies(account!.username, cookies);
         } else {
-          // MockSchool remains injectable for offline rendering tests.
           await candidate.login(account!.username, account!.password);
         }
         api?.dispose();
@@ -272,7 +290,7 @@ class AppState extends ChangeNotifier {
         return;
       } catch (_) {
         candidate.dispose();
-        error = '连接学校系统失败，请重新网页登录';
+        error = '恢复课表会话失败，请重新网页登录';
         busy = false;
         notifyListeners();
         return;
@@ -365,7 +383,8 @@ class AppState extends ChangeNotifier {
     api = null;
     _authenticated = false;
     if (!keepAccount) {
-      await _secureStorage.delete(key: _portalSessionKey);
+      await _secureStorage.delete(key: _timetableSessionKey);
+      await _secureStorage.delete(key: _legacyPortalSessionKey);
       account = null;
       await store.delete('account');
       notifyListeners();
