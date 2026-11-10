@@ -1,0 +1,30 @@
+# 工具链与本地环境（体积很大，绝不提交）
+.toolchain/
+_research/
+capture/
+dist/
+*.zip
+*.log
+*.err
+
+# Flutter / Dart
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/.pub-cache/
+app/android/.gradle/
+app/android/local.properties
+app/android/key.properties
+app/.idea/
+app/*.iml
+
+# Android
+*.jks
+*.keystore
+app/android/app/release/
+
+# 系统
+.DS_Store
+Thumbs.db
