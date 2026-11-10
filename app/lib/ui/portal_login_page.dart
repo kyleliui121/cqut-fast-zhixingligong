@@ -94,18 +94,6 @@ class _PortalLoginPageState extends State<PortalLoginPage> {
           if (decoded is String) token = decoded;
         } catch (_) {}
       }
-      if (token.isEmpty || token == 'null' || token == 'undefined') {
-        if (manual && mounted) {
-          setState(() => _message = '尚未读取到门户登录凭证，请确认已进入网上办事大厅首页');
-        }
-        return;
-      }
-      // An invalid token should not generate network requests every two seconds.
-      if (!manual && token == _attemptedToken) return;
-      _attemptedToken = token;
-      _trying = true;
-      if (mounted) setState(() => _message = '已检测到门户会话，正在连接课程服务…');
-
       final cookies = <String, String>{};
       try {
         for (final item in await _cookieManager.getCookies(domain: _portal)) {
@@ -117,6 +105,25 @@ class _PortalLoginPageState extends State<PortalLoginPage> {
         // Some WebView implementations cannot enumerate cookies. The token
         // header remains the primary authentication mechanism.
       }
+
+      // 门户把登录令牌写在 cookie（_yh_office_token）里，localStorage 只是兜底。
+      if (token.isEmpty || token == 'null' || token == 'undefined') {
+        token = cookies['_yh_office_token'] ??
+            cookies['ump_token_pc-officeHall'] ??
+            '';
+      }
+
+      if (token.isEmpty || token == 'null' || token == 'undefined') {
+        if (manual && mounted) {
+          setState(() => _message = '尚未读取到门户登录凭证，请确认已进入网上办事大厅首页');
+        }
+        return;
+      }
+      // An invalid token should not generate network requests every two seconds.
+      if (!manual && token == _attemptedToken) return;
+      _attemptedToken = token;
+      _trying = true;
+      if (mounted) setState(() => _message = '已检测到门户会话，正在连接课程服务…');
 
       final ok = await widget.state.loginWithPortalToken(token, cookies: cookies);
       if (!mounted) return;

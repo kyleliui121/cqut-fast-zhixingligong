@@ -59,6 +59,8 @@ void main() {
       final ok = await state.login('2026001', '123456');
       expect(ok, isTrue);
     });
+    // 固定同步时间，否则「更多」页的时间戳每次都会让 golden 失败
+    state.lastSync = DateTime(2026, 11, 10, 20, 0);
     await tester.pumpAndSettle();
     // ignore: avoid_print
     print('logged in');
