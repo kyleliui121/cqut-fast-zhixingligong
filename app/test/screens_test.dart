@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zhixing_flash/app_state.dart';
+import 'package:zhixing_flash/api/mock_school.dart';
 import 'package:zhixing_flash/core/store.dart';
 import 'package:zhixing_flash/main.dart';
 
@@ -39,7 +40,7 @@ void main() {
 
     final dir = Directory.systemTemp.createTempSync('zxf_test');
     final store = LocalStore.at(dir);
-    final state = AppState(store);
+    final state = AppState(store, apiFactory: MockSchool.new);
 
     await tester.runAsync(() async {
       await state.init();
