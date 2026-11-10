@@ -8,8 +8,11 @@ class FetchResult {
   final String body;
   final Uri uri;
   final Map<String, String> headers;
+  /// Redirect targets can contain authorization tickets. Never log them.
+  final List<Uri> redirectHistory;
 
-  const FetchResult(this.status, this.body, this.uri, this.headers);
+  const FetchResult(this.status, this.body, this.uri, this.headers,
+      {this.redirectHistory = const []});
 
   bool get ok => status >= 200 && status < 300;
 
@@ -96,6 +99,7 @@ class HttpSession {
     var currentUri = uri;
     var currentMethod = method;
     var currentBody = body;
+    final redirectHistory = <Uri>[];
 
     for (var hop = 0; hop <= maxRedirects; hop++) {
       final request = await _client.openUrl(currentMethod, currentUri).timeout(timeout);
@@ -114,7 +118,8 @@ class HttpSession {
       }
       if (currentBody != null) {
         final bytes = utf8.encode(currentBody);
-        request.headers.contentType =
+        // Respect the caller's JSON Content-Type; use form encoding only by default.
+        request.headers.contentType ??=
             ContentType('application', 'x-www-form-urlencoded', charset: 'utf-8');
         request.contentLength = bytes.length;
         request.add(bytes);
@@ -135,9 +140,11 @@ class HttpSession {
         final location = response.headers.value(HttpHeaders.locationHeader);
         await response.drain<void>();
         if (location == null || location.isEmpty) {
-          return FetchResult(status, '', currentUri, const <String, String>{});
+          return FetchResult(status, '', currentUri, const <String, String>{},
+              redirectHistory: List<Uri>.unmodifiable(redirectHistory));
         }
         currentUri = currentUri.resolve(location);
+        redirectHistory.add(currentUri);
         if (status == 303 || status == 301 || (status == 302 && currentMethod == 'POST')) {
           currentMethod = 'GET';
           currentBody = null;
@@ -155,7 +162,8 @@ class HttpSession {
       response.headers.forEach((name, values) {
         headerMap[name.toLowerCase()] = values.join(', ');
       });
-      return FetchResult(status, text, currentUri, headerMap);
+      return FetchResult(status, text, currentUri, headerMap,
+          redirectHistory: List<Uri>.unmodifiable(redirectHistory));
     }
 
     throw HttpException('重定向次数过多', uri: uri);
