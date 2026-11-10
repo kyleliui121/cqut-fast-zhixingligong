@@ -9,8 +9,10 @@ import 'models.dart';
 /// 全局状态：账号、缓存数据、刷新逻辑。
 class AppState extends ChangeNotifier {
   final LocalStore store;
+  final SchoolApi Function()? _apiFactory;
 
-  AppState(this.store);
+  AppState(this.store, {SchoolApi Function()? apiFactory})
+      : _apiFactory = apiFactory;
 
   Account? account;
   SchoolApi? api;
@@ -137,7 +139,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  SchoolApi _createApi() => CqutSchool();
+  SchoolApi _createApi() => _apiFactory?.call() ?? CqutSchool();
 
   Future<bool> login(String username, String password) async {
     busy = true;
