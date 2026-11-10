@@ -201,10 +201,14 @@ class CqutSchool implements SchoolApi {
       _schoolYear = '$startYear-${startYear + 1}';
     }
 
-    final weekResp = await _signedPost('/normalservice/course/getCurrentWeek', {
-      'schoolYear': _schoolYear,
-      'term': _term,
-    });
+    // The captured school endpoint uses GET for getCurrentWeek.
+    final weekResp = await _signedGet(
+      '/normalservice/course/getCurrentWeek',
+      extra: {
+        'schoolYear': _schoolYear,
+        'term': _term,
+      },
+    );
     final weekBody = _asMap(weekResp.body);
     final weekContent = (weekBody?['content'] as Map<String, dynamic>?)?['nowWeek'];
     final parsedWeek = int.tryParse(weekContent?.toString() ?? '');
@@ -326,13 +330,6 @@ class CqutSchool implements SchoolApi {
     if (signed) params['sign'] = _sign(path, params);
     final uri = Uri.parse('$_ehall$path').replace(queryParameters: params);
     return _http.get(uri, headers: _authHeaders());
-  }
-
-  Future<FetchResult> _signedPost(String path, Map<String, String> extra) async {
-    final params = _baseParams(extra);
-    params['sign'] = _sign(path, params);
-    final uri = Uri.parse('$_ehall$path').replace(queryParameters: params);
-    return _http.send('POST', uri, headers: _authHeaders());
   }
 
   Map<String, String> _baseParams(Map<String, String> extra) => {
