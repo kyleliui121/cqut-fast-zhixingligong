@@ -8,7 +8,8 @@ import 'timetable_parser.dart';
 /// Native client for the school's timetable-cfc service. CAS login happens
 /// only on the school website; only the timetable-domain cookies are reused.
 class TimetableSchool implements SchoolApi {
-  static final Uri _endpoint = Uri.parse(
+  final Uri _endpoint;
+  TimetableSchool({Uri? endpoint}) : _endpoint = endpoint ?? Uri.parse(
     'https://timetable-cfc.cqut.edu.cn/api/courseSchedule/listWeekEvents',
   );
 
